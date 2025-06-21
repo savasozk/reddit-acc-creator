@@ -1,0 +1,20 @@
+--editable .
+-r requirements.dev.txt
+streamlit>=1.35
+st-tailwind>=0.4
+watchdog>=4.0
+rich>=13
+pandas
+typer[all]
+pydantic
+pydantic-settings
+requests
+zendriver
+capsolver-python
+2captcha-python
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+argon2-cffi
+cryptography>=42.0.0
+loguru 

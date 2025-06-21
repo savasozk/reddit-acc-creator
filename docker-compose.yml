@@ -1,0 +1,29 @@
+services:
+  reddit-creator:
+    build: .
+    container_name: reddit_profile_creator
+    env_file:
+      - .env
+    volumes:
+      # Mount the entire project directory to allow for code changes without rebuilding
+      - .:/app
+      # Persist the output and authentication files
+      - ./profiles.json:/app/profiles.json
+      - ./credentials.json:/app/credentials.json
+      - ./token.json:/app/token.json
+      - ./encrypted_refresh_token.bin:/app/encrypted_refresh_token.bin
+      - ./.key:/app/.key
+    extra_hosts:
+      # Allow the container to connect to the AdsPower Local API on the host
+      - "host.docker.internal:host-gateway"
+    # The command is inherited from the Dockerfile's CMD
+
+  webui:
+    build: .
+    command: streamlit run ui/app.py --server.port 8501 --server.enableCORS false --server.enableXsrfProtection false
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+    extra_hosts:
+      - "host.docker.internal:host-gateway" 

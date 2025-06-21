@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reddit_profile_creator"
+version = "0.1.0"
+description = "A mass Reddit account creator with email verification."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name="Gemini", email="gemini@google.com" },
+]
+license = { text="MIT" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "pydantic",
+    "pydantic-settings",
+    "requests",
+    "zendriver",
+    "capsolver-python",
+    "2captcha-python",
+    "google-api-python-client",
+    "google-auth-httplib2",
+    "google-auth-oauthlib",
+    "argon2-cffi",
+    "cryptography>=42.0.0",
+    "loguru",
+    "streamlit>=1.35",
+    "st-tailwind>=0.4",
+    "watchdog>=4.0",
+    "rich>=13",
+    "pandas",
+    "typer[all]",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "respx",
+    "ruff",
+    "mypy",
+]
+
+[project.scripts]
+create-profiles = "src.main:run"
+
+[tool.ruff]
+line-length = 88
+select = ["E", "F", "W", "I", "C90", "N", "UP", "B", "A", "S"]
+ignore = ["S101"] # Ignore "assert" used outside of tests
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+disallow_untyped_defs = true
+strict = true 
