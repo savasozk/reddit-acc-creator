@@ -1,3 +1,4 @@
+import json
 import time
 from typing import Any, Dict, List, Optional
 
@@ -71,6 +72,34 @@ class AdsPowerAPI:
             logger.error(f"An error occurred while creating profile: {e}")
             return None
 
+    def list_profiles(self, group_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Lists all profiles, optionally filtered by group_id.
+
+        Args:
+            group_id: The group ID to filter profiles by.
+
+        Returns:
+            A list of profile dictionaries.
+        """
+        params = {"group_id": group_id} if group_id else {}
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/v1/user/list", params=params, timeout=30
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get("code") == 0 and "list" in data.get("data", {}):
+                profile_list = data["data"]["list"]
+                logger.info(f"Successfully retrieved {len(profile_list)} profiles.")
+                return profile_list
+            else:
+                logger.error(f"Failed to list profiles. Response: {data}")
+                return []
+        except requests.exceptions.RequestException as e:
+            logger.error(f"An error occurred while listing profiles: {e}")
+            return []
+
     def start_browser(self, user_id: str) -> Optional[Dict[str, Any]]:
         """
         Starts the browser for a given profile ID.
@@ -81,7 +110,9 @@ class AdsPowerAPI:
         Returns:
             A dictionary containing webdriver path and debug ws endpoint, or None.
         """
-        params = {"user_id": user_id, "launch_args": ["--window-size=800,600"]}
+        # The API expects list-like arguments to be JSON strings.
+        launch_args_json = json.dumps(["--window-size=800,600"])
+        params = {"user_id": user_id, "launch_args": launch_args_json}
         try:
             response = requests.get(
                 f"{self.base_url}/api/v1/browser/start", params=params, timeout=60

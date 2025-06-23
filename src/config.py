@@ -29,6 +29,9 @@ class Settings(BaseSettings):
         "http://local.adspower.net:50325",
         description="URL for the AdsPower Local API.",
     )
+    adspower_group_id: Optional[str] = Field(
+        None, description="The Group ID from AdsPower for profile operations."
+    )
 
     # Gmail API Settings
     gmail_credentials_file: str = Field(

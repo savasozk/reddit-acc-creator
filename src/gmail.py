@@ -6,13 +6,14 @@ from typing import Optional
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
+from google.auth.exceptions import RefreshError
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build, Resource
 from googleapiclient.errors import HttpError
 from loguru import logger
 
 from src.config import settings
-from src.security import encrypt_data, decrypt_data
+from src.security import encrypt_data, decrypt_data, get_fernet
 
 
 class GmailAPI:
@@ -21,44 +22,55 @@ class GmailAPI:
     def __init__(self):
         """Initializes the Gmail API service."""
         self.creds = self._get_credentials()
+        if not self.creds:
+            # This is a fatal error for the script, as it cannot proceed.
+            raise ConnectionError(
+                "Gmail credentials (`token.json`) are not found or are invalid. "
+                "Please go to the UI Configuration page and complete the "
+                "'Authorize Gmail Account' step."
+            )
         self.service = self._build_service()
 
     def _get_credentials(self) -> Optional[Credentials]:
         """
-        Gets user credentials. Handles refresh token encryption.
+        Loads credentials from the token file. If expired, it tries to refresh
+        them. This function is completely non-interactive.
         """
         creds = None
-        # The file token.json stores the user's access and refresh tokens.
-        # It is created automatically when the authorization flow completes for the first
-        # time.
-        if os.path.exists(settings.encrypted_refresh_token_file):
-            encrypted_token = open(settings.encrypted_refresh_token_file, "rb").read()
-            refresh_token = decrypt_data(encrypted_token)
-            # You might need to adjust this part based on how you store other creds info
-            # For this example, we assume we just need the refresh token.
-            # You'd typically load the full credentials JSON and then set the refresh token.
-            creds = Credentials.from_authorized_user_file(settings.gmail_token_file, settings.gmail_scopes)
-            creds.refresh_token = refresh_token
+        token_file = settings.gmail_token_file
 
-        # If there are no (valid) credentials available, let the user log in.
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
+        if not os.path.exists(token_file):
+            logger.warning(f"Gmail token file not found at '{token_file}'.")
+            return None  # Cannot proceed without the token file.
+
+        try:
+            creds = Credentials.from_authorized_user_file(token_file, settings.gmail_scopes)
+        except Exception as e:
+            logger.error(f"Failed to load credentials from '{token_file}': {e}")
+            return None
+
+        # If credentials are not valid, try to refresh them.
+        if creds and not creds.valid:
+            logger.info("Gmail credentials are not valid. Attempting to refresh...")
+            if creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                    # Persist the refreshed credentials
+                    with open(token_file, "w") as token:
+                        token.write(creds.to_json())
+                    logger.success("Gmail token refreshed and saved successfully.")
+                except RefreshError as e:
+                    logger.error(f"Failed to refresh Gmail token: {e}")
+                    logger.error(
+                        "The refresh token may be expired or revoked. "
+                        "Please re-authorize the application via the UI."
+                    )
+                    # Invalidate credentials if refresh fails
+                    return None
             else:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    settings.gmail_credentials_file, settings.gmail_scopes
-                )
-                creds = flow.run_local_server(port=0)
-            
-            # Save the credentials for the next run
-            with open(settings.gmail_token_file, "w") as token:
-                token.write(creds.to_json())
-            
-            # Encrypt and save the refresh token separately
-            if creds.refresh_token:
-                encrypted_token = encrypt_data(creds.refresh_token)
-                with open(settings.encrypted_refresh_token_file, "wb") as token_file:
-                    token_file.write(encrypted_token)
+                logger.warning("Credentials have expired and no refresh token is available.")
+                return None
+
         return creds
 
     def _build_service(self) -> Optional[Resource]:

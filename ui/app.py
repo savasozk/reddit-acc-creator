@@ -2,6 +2,7 @@ import os
 import sys
 import streamlit as st
 from loguru import logger
+from streamlit_option_menu import option_menu
 
 # Add the project root to the Python path to allow absolute imports
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -15,6 +16,7 @@ from ui.config import load_config, save_config, AppConfig, GMAIL_CREDS_FILE, PRO
 from ui.watcher import start_watching
 from ui.data_page import render_data_page, TMP_DIR, EMAILS_FILE, PROXIES_FILE
 from ui.run_worker import run_creation_process
+from ui.adspower_page import render_adspower_page
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -89,10 +91,12 @@ def show_main_app():
 
     with st.sidebar:
         st.title("Reddit Profile Creator")
-        page = st.radio(
-            "Navigation",
-            ("Configuration", "Data", "Run", "Dashboard"),
-            key="navigation_page"
+        page = option_menu(
+            "Main Menu",
+            ["Configuration", "Data", "Run", "AdsPower"],
+            icons=["gear", "table", "play-circle", "rocket-launch"],
+            menu_icon="cast",
+            default_index=0,
         )
         
         # Dark/Light mode toggle
@@ -105,8 +109,8 @@ def show_main_app():
         render_data_page()
     elif page == "Run":
         render_run_page()
-    elif page == "Dashboard":
-        render_dashboard_page()
+    elif page == "AdsPower":
+        render_adspower_page()
 
 def render_config_page():
     """Renders the configuration management page."""
@@ -153,9 +157,7 @@ def render_config_page():
         )
         if gmail_creds_file:
             st.success(f"'{gmail_creds_file.name}' uploaded successfully.")
-        elif os.path.exists(GMAIL_CREDS_FILE):
-            st.info("Gmail credentials file is already on record. Upload a new one to replace it.")
-
+        
         st.subheader("DataImpulse Proxies")
         dataimpulse_user = st.text_input(
             "DataImpulse Username",
@@ -188,13 +190,59 @@ def render_config_page():
             config.rotation_interval_minutes = rotation_interval
             
             if gmail_creds_file:
+                # We save the content to be written to a file by save_config
                 config.gmail.credentials_json = gmail_creds_file.getvalue().decode("utf-8")
 
-            # Save the updated config
+            # Save the updated config (which also writes the .env file)
             save_config(config, st.session_state.master_password)
             st.success("Configuration saved and encrypted successfully!")
             # Update session state to reflect changes immediately
             st.session_state.config = load_config(st.session_state.master_password)
+            st.rerun() # Rerun to reflect saved state
+
+    # --- Gmail Authorization (must be outside the form) ---
+    st.markdown("---")
+    st.subheader("Gmail Authorization")
+    st.caption("This step is required for email verification. You must save your configuration before authorizing.")
+    
+    # Display status of credentials and token
+    creds_exist = os.path.exists(GMAIL_CREDS_FILE)
+    token_exist = os.path.exists(os.path.join(CONFIG_DIR, 'token.json'))
+
+    if creds_exist:
+        st.info("Gmail `credentials.json` is on record.")
+    else:
+        st.warning("Gmail `credentials.json` has not been uploaded. Please upload it in the form above and save the configuration.")
+
+    if token_exist:
+        st.success("Gmail account has been authorized (`token.json` found).")
+    else:
+        st.warning("Gmail account has not been authorized yet.")
+    
+    # Authorization button
+    if st.button("Authorize Gmail Account", disabled=not creds_exist):
+        with st.spinner("Waiting for Gmail Authorization... A new browser tab may have opened. Please check your browser."):
+            try:
+                # Run the authorization script in a subprocess
+                process = subprocess.Popen(
+                    [sys.executable, "-m", "src.authorize_gmail"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                stdout, stderr = process.communicate(timeout=180) # 3 minute timeout
+
+                if process.returncode == 0:
+                    st.success("Authorization successful!")
+                    st.code(stdout, language="log")
+                    st.rerun() # Rerun to update token status
+                else:
+                    st.error("Authorization failed.")
+                    st.code(stderr, language="log")
+            except subprocess.TimeoutExpired:
+                st.error("Authorization timed out. Please try again.")
+            except Exception as e:
+                st.error(f"An error occurred while running the authorization script: {e}")
 
 def render_run_page():
     """Renders the page for running the creation process."""

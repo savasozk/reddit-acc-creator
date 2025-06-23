@@ -15,7 +15,7 @@ def tail(file_path: str, n: int = 100):
     if not os.path.exists(file_path):
         return ""
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
             lines = f.readlines()
             return "".join(lines[-n:])
     except Exception as e:
@@ -49,11 +49,11 @@ def run_creation_process(max_accounts: int, delay: int, dry_run: bool, log_conta
             pass
             
     try:
-        # The main script's logger should be configured to output to LOG_FILE.
-        # We start the process and then tail the log file.
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        # Start the subprocess, redirecting stdout and stderr to the log file
+        with open(LOG_FILE, "w", encoding="utf-8") as log_file:
+            process = subprocess.Popen(command, stdout=log_file, stderr=subprocess.STDOUT)
         
-        # Stream logs to the UI
+        # Stream logs from the file to the UI
         while process.poll() is None:
             log_content = tail(LOG_FILE, 200)
             log_container.code(log_content, language="log")

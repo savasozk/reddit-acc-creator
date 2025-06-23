@@ -17,17 +17,15 @@ from src.captcha import CaptchaSolver
 from src.config import settings
 from src.gmail import GmailAPI
 from src.security import hash_password
-from ui.config import load_config, AppConfig, PROFILES_OUTPUT_FILE
 
 # --- Loguru Configuration ---
+# Remove default handler to ensure all logs go to the file
+logger.remove()
 # Configure logger to write to a file for the UI to tail
 LOG_DIR = "logs"
 LOG_FILE = os.path.join(LOG_DIR, "profile_creator.log")
 os.makedirs(LOG_DIR, exist_ok=True)
 logger.add(LOG_FILE, level="INFO", format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}", rotation="10 MB", catch=True)
-
-
-from ui.config import load_config, AppConfig, PROFILES_OUTPUT_FILE
 
 
 class RedditProfile(BaseModel):
@@ -52,7 +50,7 @@ def generate_random_string(length: int = 10) -> str:
 
 def save_profile_to_json(profile: RedditProfile) -> None:
     """Appends a profile to the JSON log file."""
-    output_file = Path(PROFILES_OUTPUT_FILE)
+    output_file = Path(settings.profiles_output_file)
     try:
         # Ensure the directory exists
         output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -77,8 +75,6 @@ async def create_single_profile(
     gmail_api: GmailAPI,
     email_address: str,
     proxy_config: Dict[str, Any],
-    fingerprint_config: Dict[str, Any],
-    config: AppConfig,
 ) -> None:
     """Main orchestration logic for creating a single Reddit profile."""
     username = f"user_{generate_random_string(8)}"
@@ -88,9 +84,9 @@ async def create_single_profile(
     # 1. Create AdsPower profile
     adspower_id = adspower_api.create_profile(
         name=profile_name,
-        group_id=config.adspower.group_id, # Use group_id from config
+        group_id=settings.adspower_group_id,  # Use group_id from centralized settings
         proxy_config=proxy_config,
-        fingerprint_config=fingerprint_config,
+        fingerprint_config=get_fingerprint_config(),  # Assuming a default fingerprint for now
     )
     if not adspower_id:
         logger.error("Failed to create AdsPower profile. Aborting.")
@@ -217,16 +213,17 @@ def run(
         logger.error("Emails CSV or Proxies JSON file not found.")
         raise typer.Exit(code=1)
 
-    # The master password would be passed via an environment variable for security
-    config = load_config()
-    if not config:
-        logger.error("Could not load configuration. Please configure via the UI first.")
+    # Config is now loaded automatically from .env into the global settings object
+    if not settings.caps_key or not settings.adspower_group_id:
+        logger.error(
+            "Required settings (CAPS_KEY, ADSPOWER_GROUP_ID) not found in .env file."
+        )
         raise typer.Exit(code=1)
 
-    # Initialize APIs with new config
-    adspower = AdsPowerAPI(api_url=config.adspower.base_url)
-    captcha = CaptchaSolver(config=config.captcha)
-    gmail = GmailAPI(config=config.gmail)
+    # Initialize APIs with the new centralized settings
+    adspower = AdsPowerAPI() # No need to pass URL if using default
+    captcha = CaptchaSolver()
+    gmail = GmailAPI()
 
     # Read input files
     with open(emails_csv, "r") as f:
@@ -254,33 +251,20 @@ def run(
     async def main():
         tasks = []
         for i, email in enumerate(emails_to_process):
-            # Simple round-robin for proxies
-            proxy_info = proxies[i % len(proxies)]
-
-            # Construct proxy and fingerprint configs
-            proxy_config = {
-                "proxy_soft": "other",
-                "proxy_type": proxy_info.get("type", "http"),
-                "proxy_host": proxy_info.get("host"),
-                "proxy_port": proxy_info.get("port"),
-                "proxy_user": proxy_info.get("user", ""),
-                "proxy_password": proxy_info.get("password", ""),
-            }
-            fingerprint_config = {"automatic_timezone": "1"}
-
+            # Rotate through proxies
+            proxy = proxies[i % len(proxies)]
+            
             task = create_single_profile(
                 adspower_api=adspower,
                 captcha_solver=captcha,
                 gmail_api=gmail,
                 email_address=email,
-                proxy_config=proxy_config,
-                fingerprint_config=fingerprint_config,
-                config=config,
+                proxy_config=proxy,
             )
             tasks.append(task)
-
+            
+            # Add delay between starting tasks
             if i < len(emails_to_process) - 1:
-                logger.info(f"Waiting for {delay} seconds before starting next task.")
                 await asyncio.sleep(delay)
         
         await asyncio.gather(*tasks)

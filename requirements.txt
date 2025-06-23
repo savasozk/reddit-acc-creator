@@ -1,6 +1,7 @@
 --editable .
 -r requirements.dev.txt
 streamlit>=1.35
+streamlit-option-menu
 st-tailwind>=0.4
 watchdog>=4.0
 rich>=13

@@ -62,7 +62,10 @@ def get_key_from_password(password: str, salt: bytes) -> bytes:
     return base64.urlsafe_b64encode(kdf.derive(password.encode()))
 
 def save_config(config: AppConfig, master_password: str) -> None:
-    """Encrypts and saves the configuration to disk."""
+    """
+    Encrypts and saves the configuration to a secure file, and also
+    writes a .env file for the backend script to use.
+    """
     os.makedirs(CONFIG_DIR, exist_ok=True)
     
     # Save the Gmail credentials JSON to its own file if it exists
@@ -81,6 +84,38 @@ def save_config(config: AppConfig, master_password: str) -> None:
     with open(ENCRYPTED_CONFIG_FILE, "wb") as f:
         f.write(salt + encrypted_data)
     logger.success("Configuration saved and encrypted successfully.")
+
+    # --- Write .env file for backend script ---
+    try:
+        env_content = []
+        # Map nested Pydantic config to flat .env format
+        # Note: pydantic-settings automatically looks for uppercase keys
+        if config.captcha.caps_key:
+            env_content.append(f"CAPS_KEY={config.captcha.caps_key}")
+        if config.captcha.captcha_2_key:
+            env_content.append(f"CAPTCHA_2_KEY={config.captcha.captcha_2_key}")
+        if config.adspower.base_url:
+            env_content.append(f"ADSPOWER_API_URL={config.adspower.base_url}")
+        if config.adspower.group_id:
+            env_content.append(f"ADSPOWER_GROUP_ID={config.adspower.group_id}")
+        
+        # Add other necessary settings
+        env_content.append(f"GMAIL_CREDENTIALS_FILE={GMAIL_CREDS_FILE}")
+        env_content.append(f"GMAIL_TOKEN_FILE={os.path.join(CONFIG_DIR, 'token.json')}")
+        env_content.append(f"ENCRYPTED_REFRESH_TOKEN_FILE={os.path.join(CONFIG_DIR, 'encrypted_refresh_token.bin')}")
+        env_content.append(f"ENCRYPTION_KEY_FILE={os.path.join(CONFIG_DIR, '.gmail.key')}")
+        env_content.append(f"PROFILES_OUTPUT_FILE={PROFILES_OUTPUT_FILE}")
+
+        # The project root is one level up from the 'ui' directory where this script might be called from
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        env_file_path = os.path.join(project_root, ".env")
+
+        with open(env_file_path, "w") as f:
+            f.write("\n".join(env_content))
+        logger.success(f".env file written successfully to {env_file_path}")
+
+    except Exception as e:
+        logger.error(f"Failed to write .env file: {e}")
 
 def load_config(master_password: Optional[str] = None) -> Optional[AppConfig]:
     """Loads and decrypts the configuration from disk."""
